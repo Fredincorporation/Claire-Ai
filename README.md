@@ -4,7 +4,7 @@ Claire is a production-ready, autonomous multi-agent AI Social Media Manager pla
 
 ---
 
-## 🌟 Tranche 4 Features & Public Launch Capabilities
+## 🌟 Features & Capabilities
 
 1. **Supabase Auth & Multi-User Isolation**
    - Email/Password & Google OAuth authentication.
