@@ -130,11 +130,60 @@ class MemoryManager:
 
         return self._in_memory_conversations.get(conversation_id, [])
 
+    async def ensure_conversation(
+        self,
+        conversation_id: str,
+        user_id: Optional[str] = None,
+        title: Optional[str] = None,
+        brand_id: Optional[str] = "default",
+        mode: Optional[str] = "auto"
+    ) -> Dict[str, Any]:
+        """
+        Ensures a parent conversation record exists in Supabase and in-memory cache.
+        Uses an upsert pattern so that foreign key constraints on chat_messages are satisfied.
+        Handles both authenticated users and guest users (user_id = None).
+        """
+        if not conversation_id:
+            import uuid
+            conversation_id = f"conv_{uuid.uuid4().hex[:8]}"
+
+        default_title = title or "New Conversation"
+
+        conv_obj = {
+            "id": conversation_id,
+            "title": default_title,
+            "user_id": user_id if user_id else None,
+            "brand_id": brand_id or "default",
+            "mode": mode or "auto"
+        }
+
+        if conversation_id not in self._in_memory_conversations:
+            self._in_memory_conversations[conversation_id] = []
+
+        if self.client:
+            try:
+                self.client.table("conversations").upsert(conv_obj).execute()
+            except Exception as e:
+                logger.debug(f"Upsert to 'conversations' table in Supabase note: {e}")
+
+        return conv_obj
+
     async def list_conversations(self, user_id: Optional[str] = None) -> List[str]:
         """
         Lists distinct conversation IDs.
+        Checks 'conversations' table first, falling back to 'chat_messages' table and in-memory cache.
         """
         if self.client:
+            try:
+                query = self.client.table("conversations").select("id")
+                if user_id:
+                    query = query.eq("user_id", user_id)
+                response = query.execute()
+                if response.data:
+                    return [row["id"] for row in response.data if row.get("id")]
+            except Exception as e:
+                logger.debug(f"Could not list from 'conversations' table: {e}, checking 'chat_messages'.")
+
             try:
                 query = self.client.table("chat_messages").select("conversation_id")
                 if user_id:
@@ -155,13 +204,32 @@ class MemoryManager:
         content: str,
         agent_name: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
+        brand_id: Optional[str] = "default",
+        mode: Optional[str] = "auto",
+        title: Optional[str] = None
     ) -> None:
         """
         Saves user or assistant message to memory storage.
+        Ensures parent conversation exists FIRST (via upsert) before inserting the chat message.
         Handles user_id being None for guest users (NULL in DB).
         Safely handles agent_name both in column and inside metadata for schema resilience.
         """
+        # 1. Ensure parent conversation exists first to satisfy foreign key constraints
+        conv_title = title
+        if not conv_title and role == "user" and content:
+            clean_content = content.replace("[Voice Input]", "").strip()
+            conv_title = clean_content[:40] + ("..." if len(clean_content) > 40 else "")
+
+        await self.ensure_conversation(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            title=conv_title,
+            brand_id=brand_id,
+            mode=mode
+        )
+
+        # 2. Prepare message record
         resolved_agent_name = agent_name or ("assistant" if role == "assistant" else "user")
 
         meta_copy = dict(metadata or {})

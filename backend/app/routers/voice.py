@@ -76,7 +76,9 @@ async def voice_endpoint(
             conversation_id=conv_id,
             role="user",
             content=f"[Voice Input] {transcription}",
-            user_id=user_id
+            user_id=user_id,
+            brand_id=validated_brand_id,
+            mode=validated_mode
         )
 
         supervisor = SupervisorAgent()
@@ -108,7 +110,9 @@ async def voice_endpoint(
             content=reply,
             agent_name=supervisor.name,
             metadata=metadata,
-            user_id=user_id
+            user_id=user_id,
+            brand_id=validated_brand_id,
+            mode=validated_mode
         )
 
         chat_resp = ChatResponse(

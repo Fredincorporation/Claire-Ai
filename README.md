@@ -37,7 +37,18 @@ Claire is a production-ready, autonomous multi-agent AI Social Media Manager pla
 To set up user persistence and multi-user isolation in Supabase, run the following SQL queries in your Supabase SQL Editor:
 
 ```sql
--- 1. Create brand_profiles table
+-- 1. Create conversations table
+CREATE TABLE IF NOT EXISTS conversations (
+    id TEXT PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    title TEXT DEFAULT 'New Conversation',
+    brand_id TEXT DEFAULT 'default',
+    mode TEXT DEFAULT 'auto',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 2. Create brand_profiles table
 CREATE TABLE IF NOT EXISTS brand_profiles (
     id TEXT PRIMARY KEY,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -53,10 +64,10 @@ CREATE TABLE IF NOT EXISTS brand_profiles (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 2. Create chat_messages table
+-- 3. Create chat_messages table
 CREATE TABLE IF NOT EXISTS chat_messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    conversation_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
@@ -66,6 +77,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 
 -- Indexes for fast query performance
+CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_user ON chat_messages(user_id);
 CREATE INDEX IF NOT EXISTS idx_brand_profiles_user ON brand_profiles(user_id);

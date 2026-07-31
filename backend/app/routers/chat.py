@@ -122,7 +122,9 @@ async def chat_endpoint(
             conversation_id=conv_id,
             role="user",
             content=request.message,
-            user_id=user_id
+            user_id=user_id,
+            brand_id=request.brand_id,
+            mode=request.mode
         )
 
         supervisor = SupervisorAgent()
@@ -160,7 +162,9 @@ async def chat_endpoint(
             content=reply,
             agent_name=supervisor.name,
             metadata=metadata,
-            user_id=user_id
+            user_id=user_id,
+            brand_id=request.brand_id,
+            mode=request.mode
         )
 
         return ChatResponse(
