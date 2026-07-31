@@ -35,8 +35,8 @@ to deliver top-tier social media strategies, platform-native content, and growth
         self.optimizer = OptimizerAgent()
 
     async def process_message(
-        self, 
-        message: str, 
+        self,
+        message: str,
         history: Optional[List[Any]] = None,
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
@@ -58,35 +58,96 @@ to deliver top-tier social media strategies, platform-native content, and growth
 
         agent_steps: List[Dict[str, Any]] = []
         platform_posts: Dict[str, str] = {}
+        optimized_posts: Dict[str, str] = {}
+        diagnosis: Optional[Dict[str, Any]] = None
+        calendar: Optional[List[Dict[str, Any]]] = None
+        exports: Optional[Dict[str, str]] = None
         image_prompts: List[Dict[str, Any]] = []
         reply_text = ""
         actions: List[Dict[str, str]] = []
 
-        if intent == "optimize":
+        if intent == "calendar":
+            # Dedicated Content-Calendar Pipeline: Strategist -> Editor
+            timeframe = "monthly" if any(w in message.lower() for w in ["month", "monthly", "30 days", "30-day", "4 weeks"]) else "weekly"
+            calendar = await self.strategist.generate_calendar(message, timeframe=timeframe, context=ctx)
+            agent_steps.append({
+                "agent_name": self.strategist.name,
+                "role": self.strategist.role,
+                "summary": f"Generated a {len(calendar)}-item content schedule ({timeframe}).",
+                "data": {"item_count": len(calendar), "timeframe": timeframe}
+            })
+
+            # Pass calendar posts through Editor for brand voice verification
+            draft_posts = {f"Day {item.get('day_number', idx+1)} ({item.get('platform', 'x')})": item.get("post_content", "") for idx, item in enumerate(calendar)}
+            ctx["platform_posts"] = draft_posts
+            edit_result = await self.editor.process_message(message, context=ctx)
+            agent_steps.append({
+                "agent_name": self.editor.name,
+                "role": self.editor.role,
+                "summary": "Verified content calendar against brand guidelines and tone.",
+                "data": edit_result.get("editor_notes")
+            })
+
+            # Build export formats for calendar
+            csv_lines = ["Day,Platform,Theme,Best Time,Post Content"]
+            md_lines = ["# Content Calendar Plan\n"]
+            txt_lines = ["CONTENT CALENDAR SCHEDULE\n"]
+
+            for item in calendar:
+                d_label = item.get("day_label", "Day")
+                plat = item.get("platform", "x").upper()
+                thm = item.get("theme", "General")
+                tme = item.get("best_time", "09:00 AM")
+                cnt = item.get("post_content", "")
+
+                md_lines.append(f"### {d_label} | {plat} ({tme}) - *{thm}*\n{cnt}\n")
+                txt_lines.append(f"[{d_label} - {plat} @ {tme}]\nTheme: {thm}\nContent: {cnt}\n")
+                clean_cnt = cnt.replace('"', '""').replace("\n", " ")
+                csv_lines.append(f"\"{d_label}\",\"{plat}\",\"{thm}\",\"{tme}\",\"{clean_cnt}\"")
+
+            exports = {
+                "markdown": "\n".join(md_lines),
+                "buffer_csv": "\n".join(csv_lines),
+                "plain_text": "\n".join(txt_lines)
+            }
+
+            reply_text = f"I've generated a comprehensive {len(calendar)}-day Content Calendar tailored for your target channels with optimal posting times and theme pillars."
+            actions = [
+                {"label": "Download Markdown", "action": "download_md"},
+                {"label": "Export Buffer CSV", "action": "download_csv"}
+            ]
+
+        elif intent == "optimize":
             # Optimization Pipeline: Optimizer -> Editor
             opt_result = await self.optimizer.process_message(message, context=ctx)
             agent_steps.append({
                 "agent_name": self.optimizer.name,
                 "role": self.optimizer.role,
-                "summary": "Analyzed post hooks, readability, and engagement structure.",
+                "summary": "Analyzed post hooks, readability, engagement structure, and content gaps.",
                 "data": opt_result.get("optimization", {})
             })
 
-            ctx["platform_posts"] = {"primary": opt_result.get("optimization", {}).get("optimized_post", message)}
+            opt_data = opt_result.get("optimization", {})
+            diagnosis = opt_data.get("diagnosis", {})
+            optimized_posts = opt_data.get("optimized_posts", {})
+            exports = opt_result.get("exports")
+
+            # Editor pass
+            ctx["platform_posts"] = optimized_posts if optimized_posts else {"primary": opt_data.get("optimized_post", message)}
             ctx["brand_id"] = brand_id
             edit_result = await self.editor.process_message(message, context=ctx)
             agent_steps.append({
                 "agent_name": self.editor.name,
                 "role": self.editor.role,
-                "summary": "Polished optimized draft to ensure perfect brand voice alignment.",
+                "summary": "Polished optimized drafts to ensure strict brand voice compliance.",
                 "data": edit_result.get("editor_notes")
             })
 
-            platform_posts = edit_result.get("platform_posts", {})
-            reply_text = f"I've optimized your post! Here is the performance breakdown and brand-aligned version:\n\n{opt_result.get('optimization', {}).get('optimized_post', message)}"
+            platform_posts = edit_result.get("platform_posts", optimized_posts)
+            reply_text = f"I've completed a full content audit and optimized your copy across all target channels! Check the diagnosis, platform rewrites, and 7-day action plan below."
             actions = [
-                {"label": "Copy Optimized Post", "action": "copy"},
-                {"label": "Generate Image Prompt", "action": "generate_image"}
+                {"label": "Copy All Rewrites", "action": "copy_all"},
+                {"label": "Download Audit Report", "action": "download_md"}
             ]
 
         elif intent == "research":
@@ -181,9 +242,29 @@ to deliver top-tier social media strategies, platform-native content, and growth
                 {"label": "Regenerate Image Prompts", "action": "regen_visuals"}
             ]
 
+        # Generate default export bundle if not built by specific mode
+        if not exports and platform_posts:
+            md_lines = ["# Campaign Content Export\n"]
+            csv_lines = ["Date,Time,Platform,Post Content"]
+            txt_lines = ["CAMPAIGN CONTENT SUMMARY\n"]
+            for idx, (plat, content) in enumerate(platform_posts.items(), 1):
+                md_lines.append(f"### {plat.upper()}\n{content}\n")
+                txt_lines.append(f"=== {plat.upper()} ===\n{content}\n")
+                clean_c = content.replace('"', '""').replace("\n", " ")
+                csv_lines.append(f"2025-05-0{idx},09:00 AM,{plat.capitalize()},\"{clean_c}\"")
+            exports = {
+                "markdown": "\n".join(md_lines),
+                "buffer_csv": "\n".join(csv_lines),
+                "plain_text": "\n".join(txt_lines)
+            }
+
         return {
             "reply": reply_text,
             "platform_posts": platform_posts,
+            "optimized_posts": optimized_posts,
+            "diagnosis": diagnosis,
+            "calendar": calendar,
+            "exports": exports,
             "image_prompts": image_prompts,
             "agent_steps": agent_steps,
             "actions": actions,
@@ -195,10 +276,12 @@ to deliver top-tier social media strategies, platform-native content, and growth
         """
         Infers user intent from explicit parameter or message keywords.
         """
-        if explicit_mode in ["create", "optimize", "research", "chat"]:
+        if explicit_mode in ["create", "optimize", "research", "calendar", "chat"]:
             return explicit_mode
 
         msg_lower = message.lower()
+        if any(k in msg_lower for k in ["calendar", "schedule", "content plan", "weekly plan", "monthly plan", "planner"]):
+            return "calendar"
         if any(k in msg_lower for k in ["optimize", "rewrite", "improve", "critique", "fix my post", "better hook"]):
             return "optimize"
         if any(k in msg_lower for k in ["research", "search", "stats", "data on", "find trends"]):

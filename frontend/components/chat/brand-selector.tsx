@@ -1,40 +1,41 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, ChevronDown, Check, Sparkles, Plus } from "lucide-react";
+import { Building2, ChevronDown, Check, Sliders } from "lucide-react";
 import { BrandProfile } from "@/types/chat";
+import { BrandVoiceEditorModal } from "@/components/chat/brand-voice-editor";
 
 export const PRESET_BRANDS: BrandProfile[] = [
   {
     id: "default",
     name: "Claire Global Brand",
     tagline: "AI-Powered Social Media Management",
-    tone: "Professional, Engaging, Authoritative",
-    targetAudience: "Tech Founders, Content Creators, Marketers",
+    tone_of_voice: "Professional, Engaging, Authoritative",
+    target_audience: "Tech Founders, Content Creators, Marketers",
     color: "from-purple-500 to-indigo-500",
   },
   {
     id: "tech_startup",
     name: "Pulse AI (Tech SaaS)",
     tagline: "Next-gen Developer Analytics",
-    tone: "Visionary, Concise, High-Tech",
-    targetAudience: "Developers, CTOs, Tech Enthusiasts",
+    tone_of_voice: "Visionary, Concise, High-Tech",
+    target_audience: "Developers, CTOs, Tech Enthusiasts",
     color: "from-blue-500 to-cyan-500",
   },
   {
     id: "lifestyle_brand",
     name: "Aura Living (Lifestyle)",
     tagline: "Minimalist Mindful Living",
-    tone: "Warm, Inspiring, Aesthetic",
-    targetAudience: "Gen Z & Millennial Creators",
+    tone_of_voice: "Warm, Inspiring, Aesthetic",
+    target_audience: "Gen Z & Millennial Creators",
     color: "from-pink-500 to-rose-400",
   },
   {
     id: "b2b_enterprise",
     name: "Apex Global (Enterprise)",
     tagline: "Cloud Strategy & Automation",
-    tone: "Polished, Thoughtful, Data-driven",
-    targetAudience: "Executives, Marketing Directors",
+    tone_of_voice: "Polished, Thoughtful, Data-driven",
+    target_audience: "Executives, Marketing Directors",
     color: "from-emerald-500 to-teal-600",
   },
 ];
@@ -46,6 +47,7 @@ interface BrandSelectorProps {
 
 export function BrandSelector({ selectedBrandId, onSelectBrand }: BrandSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
 
   const activeBrand =
     PRESET_BRANDS.find((b) => b.id === selectedBrandId) || PRESET_BRANDS[0];
@@ -66,7 +68,7 @@ export function BrandSelector({ selectedBrandId, onSelectBrand }: BrandSelectorP
               {activeBrand.name}
             </div>
             <div className="text-[10px] text-muted-foreground truncate font-sans">
-              {activeBrand.tone}
+              {activeBrand.tone_of_voice}
             </div>
           </div>
         </div>
@@ -99,7 +101,7 @@ export function BrandSelector({ selectedBrandId, onSelectBrand }: BrandSelectorP
                     }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className={`w-5 h-5 rounded bg-gradient-to-tr ${brand.color} shrink-0`} />
+                    <div className={`w-5 h-5 rounded bg-gradient-to-tr ${brand.color || "from-purple-500 to-indigo-500"} shrink-0`} />
                     <div className="min-w-0">
                       <div className="font-medium text-foreground truncate">{brand.name}</div>
                       <div className="text-[10px] text-muted-foreground/80 truncate">{brand.tagline}</div>
@@ -109,9 +111,28 @@ export function BrandSelector({ selectedBrandId, onSelectBrand }: BrandSelectorP
                 </button>
               );
             })}
+
+            <div className="pt-1 border-t border-border/40 mt-1">
+              <button
+                onClick={() => {
+                  setIsOpen(false);
+                  setIsEditorOpen(true);
+                }}
+                className="w-full flex items-center justify-center gap-1.5 p-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-medium transition-colors"
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Edit Brand Voice Rules</span>
+              </button>
+            </div>
           </div>
         </>
       )}
+
+      <BrandVoiceEditorModal
+        brandId={selectedBrandId}
+        isOpen={isEditorOpen}
+        onClose={() => setIsEditorOpen(false)}
+      />
     </div>
   );
 }

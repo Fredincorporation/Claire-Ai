@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.routers import health_router, chat_router, voice_router
+from app.routers import health_router, chat_router, voice_router, images_router, brands_router, conversations_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -27,6 +27,9 @@ app.add_middleware(
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(voice_router, prefix="/api/v1")
+app.include_router(images_router, prefix="/api/v1")
+app.include_router(brands_router, prefix="/api/v1")
+app.include_router(conversations_router, prefix="/api/v1")
 
 @app.get("/")
 async def root():

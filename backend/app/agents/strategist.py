@@ -25,8 +25,8 @@ Determine:
         )
 
     async def process_message(
-        self, 
-        message: str, 
+        self,
+        message: str,
         history: Optional[List[Any]] = None,
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
@@ -58,3 +58,67 @@ Specify high-converting hooks and distribution angles per platform.
             "strategy": strategy_output,
             "status": "success"
         }
+
+    async def generate_calendar(
+        self,
+        message: str,
+        timeframe: str = "weekly",
+        context: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate a structured content calendar (weekly 7-day or monthly schedule).
+        """
+        ctx = context or {}
+        brand_profile = ctx.get("brand_profile", {})
+        platforms = ctx.get("platforms") or ["x", "linkedin", "instagram", "tiktok", "threads"]
+
+        days_count = 7 if timeframe != "monthly" else 14
+
+        prompt = f"""
+Campaign/Topic Goal: {message}
+Timeframe: {timeframe.capitalize()} ({days_count} scheduled posts)
+Target Platforms: {', '.join(platforms)}
+
+Brand Voice & Guidelines:
+- Tone: {brand_profile.get('tone_of_voice', 'Authoritative, engaging, direct')}
+- Content Pillars: {', '.join(brand_profile.get('content_pillars', ['AI', 'Strategy', 'Growth']))}
+
+Generate a structured {days_count}-day Content Calendar.
+Return a valid JSON array of objects, where each object has EXACTLY this structure:
+[
+  {{
+    "day_number": 1,
+    "day_label": "Day 1 (Mon)",
+    "platform": "x",
+    "theme": "Educational / How-To",
+    "post_content": "Full platform-native post copy with hook, body, and CTA...",
+    "best_time": "09:00 AM EST",
+    "image_prompt": "A modern, high-tech graphic showing..."
+  }}
+]
+"""
+        import json
+        raw_response = await self.call_llm(user_message=prompt, temperature=0.5, json_mode=True)
+        try:
+            parsed = json.loads(raw_response)
+            if isinstance(parsed, list):
+                return parsed
+            if isinstance(parsed, dict) and "calendar" in parsed:
+                return parsed["calendar"]
+        except Exception as e:
+            logger.warning(f"StrategistAgent calendar parsing failed: {e}")
+
+        # Fallback calendar
+        fallback = []
+        for i in range(1, days_count + 1):
+            plat = platforms[(i - 1) % len(platforms)]
+            fallback.append({
+                "day_number": i,
+                "day_label": f"Day {i}",
+                "platform": plat,
+                "theme": f"Pillar Insight #{i}",
+                "post_content": f"Day {i} Content for {plat.upper()}: {message} - High-value insights and engagement hook.",
+                "best_time": "09:00 AM EST",
+                "image_prompt": f"Minimalist professional graphic illustration for {message}."
+            })
+        return fallback

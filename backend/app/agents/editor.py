@@ -92,10 +92,26 @@ Return a valid JSON object:
         )
         parsed = self._parse_json(raw_response, draft_posts)
 
+        # Sanitize output against banned words strictly
+        platform_posts = parsed.get("platform_posts", draft_posts)
+        banned_list = brand_profile.get("do_not_use", [])
+        if banned_list and isinstance(platform_posts, dict):
+            sanitized_posts = {}
+            for p_key, p_text in platform_posts.items():
+                clean_text = str(p_text)
+                for word in banned_list:
+                    if word and isinstance(word, str):
+                        # Case-insensitive replacement
+                        import re
+                        pattern = re.compile(re.escape(word), re.IGNORECASE)
+                        clean_text = pattern.sub("[removed]", clean_text)
+                sanitized_posts[p_key] = clean_text
+            platform_posts = sanitized_posts
+
         return {
             "agent_name": self.name,
             "role": self.role,
-            "platform_posts": parsed.get("platform_posts", draft_posts),
+            "platform_posts": platform_posts,
             "editor_notes": parsed.get("editor_notes", "All posts verified against brand guidelines."),
             "brand_compliance": parsed.get("brand_compliance", {"passed": True, "issues_fixed": []}),
             "brand_profile_used": {

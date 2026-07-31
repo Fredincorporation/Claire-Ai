@@ -4,9 +4,11 @@ import { useState } from "react";
 import { Check, Copy, Share2, Sparkles, LayoutGrid, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ExportMenu } from "@/components/chat/export-menu";
 
 interface PlatformPostCardsProps {
   posts: Record<string, string>;
+  exports?: Record<string, string>;
 }
 
 const PLATFORM_CONFIG: Record<
@@ -57,7 +59,7 @@ const PLATFORM_CONFIG: Record<
   },
 };
 
-export function PlatformPostCards({ posts }: PlatformPostCardsProps) {
+export function PlatformPostCards({ posts, exports }: PlatformPostCardsProps) {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>(Object.keys(posts)[0] || "");
   const [viewMode, setViewMode] = useState<"tabs" | "grid">("tabs");
@@ -208,6 +210,9 @@ export function PlatformPostCards({ posts }: PlatformPostCardsProps) {
           {platformKeys.map((key) => renderCard(key, posts[key]))}
         </div>
       )}
+
+      {/* Export Menu */}
+      <ExportMenu exports={exports} posts={posts} title="Export Post Set" />
     </div>
   );
 }

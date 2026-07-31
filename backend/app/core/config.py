@@ -20,10 +20,18 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str = ""
     SUPABASE_ANON_KEY: str = ""
 
+    # Cloudflare Workers AI (optional — image generation)
+    CLOUDFLARE_ACCOUNT_ID: str = ""
+    CLOUDFLARE_API_TOKEN: str = ""
+    CLOUDFLARE_AI_IMAGE_MODEL: str = "@cf/bytedance/stable-diffusion-xl-lightning"
+
     # Rate limiting (enable in staging/production)
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_REQUESTS: int = 30
     RATE_LIMIT_WINDOW_SECONDS: int = 60
+
+    # Authentication requirement (set to true in production to strictly require valid JWT)
+    REQUIRE_AUTH: bool = False
 
     # CORS settings
     CORS_ORIGINS: Union[List[str], str] = [

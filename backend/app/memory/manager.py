@@ -1,3 +1,4 @@
+import time
 import logging
 from typing import List, Dict, Any, Optional
 from supabase import create_client, Client
@@ -5,24 +6,27 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+CACHE_TTL_SECONDS = 300  # 5-minute in-memory cache for profiles & listings
+
 class MemoryManager:
     """
     Manages brand profiles and conversation history with Supabase,
-    falling back seamlessly to in-memory dictionary storage if Supabase is unconfigured or fails.
+    with multi-user isolation, TTL caching, and seamless in-memory fallback.
     """
     def __init__(self):
         self.supabase_url = settings.SUPABASE_URL
         self.supabase_key = settings.SUPABASE_SERVICE_ROLE_KEY or settings.SUPABASE_ANON_KEY
         self.client: Optional[Client] = None
 
-        # In-memory fallbacks
+        # In-memory fallbacks & caches
         self._in_memory_conversations: Dict[str, List[Dict[str, Any]]] = {}
         self._in_memory_brands: Dict[str, Dict[str, Any]] = {}
+        self._cache_timestamps: Dict[str, float] = {}
 
         if self.supabase_url and self.supabase_key:
             try:
                 self.client = create_client(self.supabase_url, self.supabase_key)
-                logger.info("Supabase client initialized successfully in MemoryManager.")
+                logger.info("Supabase client initialized in MemoryManager.")
             except Exception as e:
                 logger.warning(f"Failed to initialize Supabase client: {e}. Using in-memory store.")
                 self.client = None
@@ -42,35 +46,48 @@ class MemoryManager:
             "do_not_use": ["synergy", "paradigm shift", "leverage (overused)", "buzzwords without context"]
         }
 
-    async def get_brand_profile(self, brand_id: Optional[str] = "default") -> Dict[str, Any]:
+    async def get_brand_profile(self, brand_id: Optional[str] = "default", user_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Retrieves brand voice and strategy profile.
+        Retrieves brand voice and strategy profile with TTL caching and user filtering.
         """
         target_id = brand_id or "default"
+        cache_key = f"brand_{user_id or 'anon'}_{target_id}"
 
-        if target_id in self._in_memory_brands:
-            return self._in_memory_brands[target_id]
+        now = time.time()
+        if cache_key in self._in_memory_brands and (now - self._cache_timestamps.get(cache_key, 0)) < CACHE_TTL_SECONDS:
+            return self._in_memory_brands[cache_key]
 
         if self.client:
             try:
-                response = self.client.table("brand_profiles").select("*").eq("id", target_id).execute()
+                query = self.client.table("brand_profiles").select("*").eq("id", target_id)
+                if user_id:
+                    query = query.eq("user_id", user_id)
+                response = query.execute()
                 if response.data and len(response.data) > 0:
                     profile = response.data[0]
-                    self._in_memory_brands[target_id] = profile
+                    self._in_memory_brands[cache_key] = profile
+                    self._cache_timestamps[cache_key] = now
                     return profile
             except Exception as e:
                 logger.warning(f"Error reading brand profile from Supabase: {e}")
 
         default_profile = self.get_default_brand_profile()
         default_profile["id"] = target_id
+        if user_id:
+            default_profile["user_id"] = user_id
         return default_profile
 
-    async def save_brand_profile(self, brand_id: str, profile_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def save_brand_profile(self, brand_id: str, profile_data: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Saves or updates brand profile.
         """
         profile_data["id"] = brand_id
-        self._in_memory_brands[brand_id] = profile_data
+        if user_id:
+            profile_data["user_id"] = user_id
+
+        cache_key = f"brand_{user_id or 'anon'}_{brand_id}"
+        self._in_memory_brands[cache_key] = profile_data
+        self._cache_timestamps[cache_key] = time.time()
 
         if self.client:
             try:
@@ -80,24 +97,40 @@ class MemoryManager:
 
         return profile_data
 
-    async def get_conversation_history(self, conversation_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    async def get_full_conversation_messages(self, conversation_id: str, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Retrieves context history for a given conversation.
+        Retrieves complete messages with full metadata for restoring session state.
         """
         if self.client:
             try:
-                response = self.client.table("chat_messages")\
-                    .select("role, content, agent_name, created_at")\
-                    .eq("conversation_id", conversation_id)\
-                    .order("created_at", desc=False)\
-                    .limit(limit)\
-                    .execute()
+                query = self.client.table("chat_messages").select("*").eq("conversation_id", conversation_id)
+                if user_id:
+                    query = query.eq("user_id", user_id)
+                response = query.order("created_at", desc=False).execute()
                 if response.data:
                     return response.data
             except Exception as e:
-                logger.warning(f"Error reading chat history from Supabase: {e}")
+                logger.warning(f"Error reading full chat history from Supabase: {e}")
 
-        return self._in_memory_conversations.get(conversation_id, [])[-limit:]
+        return self._in_memory_conversations.get(conversation_id, [])
+
+    async def list_conversations(self, user_id: Optional[str] = None) -> List[str]:
+        """
+        Lists distinct conversation IDs.
+        """
+        if self.client:
+            try:
+                query = self.client.table("chat_messages").select("conversation_id")
+                if user_id:
+                    query = query.eq("user_id", user_id)
+                response = query.execute()
+                if response.data:
+                    ids = list({row["conversation_id"] for row in response.data if row.get("conversation_id")})
+                    return ids
+            except Exception as e:
+                logger.warning(f"Error listing conversations from Supabase: {e}")
+
+        return list(self._in_memory_conversations.keys())
 
     async def save_message(
         self,
@@ -105,7 +138,8 @@ class MemoryManager:
         role: str,
         content: str,
         agent_name: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None
     ) -> None:
         """
         Saves user or assistant message to memory storage.
@@ -117,6 +151,8 @@ class MemoryManager:
             "agent_name": agent_name or ("assistant" if role == "assistant" else "user"),
             "metadata": metadata or {}
         }
+        if user_id:
+            message_obj["user_id"] = user_id
 
         if conversation_id not in self._in_memory_conversations:
             self._in_memory_conversations[conversation_id] = []
@@ -129,4 +165,5 @@ class MemoryManager:
                 logger.warning(f"Error saving chat message to Supabase: {e}")
 
 memory_manager = MemoryManager()
+
 

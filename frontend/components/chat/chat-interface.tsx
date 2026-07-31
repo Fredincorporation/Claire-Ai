@@ -4,27 +4,34 @@ import { useState, useRef, useEffect } from "react";
 import {
   Send,
   Sparkles,
-  Image as ImageIcon,
-  Calendar,
-  BarChart3,
   Bot,
   User,
   ArrowUpRight,
   AlertTriangle,
-  RefreshCw,
   Zap,
   Mic,
-  CheckCircle2,
-  Share2
+  Paperclip,
+  FileText,
+  X,
+  UploadCloud,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { useChat } from "@/context/chat-context";
 import { AgentStepsAccordion } from "@/components/chat/agent-steps-accordion";
 import { PlatformPostCards } from "@/components/chat/platform-post-cards";
 import { ImagePromptCard } from "@/components/chat/image-prompt-card";
+import { DiagnosisCard } from "@/components/chat/diagnosis-card";
+import { ContentCalendarView } from "@/components/chat/content-calendar-view";
 import { VoiceRecorderButton } from "@/components/chat/voice-recorder-button";
+import { PROMPT_STARTERS, MODE_STARTER_LABELS } from "@/lib/prompt-starters";
+
+interface AttachedFile {
+  id: string;
+  name: string;
+  content: string;
+  sizeFormatted: string;
+}
 
 export function ChatInterface() {
   const {
@@ -40,6 +47,8 @@ export function ChatInterface() {
   } = useChat();
 
   const [inputMessage, setInputMessage] = useState("");
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -50,43 +59,66 @@ export function ChatInterface() {
     scrollToBottom();
   }, [messages, isLoading]);
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      const sizeFormatted = file.size > 1024 * 1024
+        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.round(file.size / 1024)} KB`;
+
+      reader.onload = (event) => {
+        const content = event.target?.result as string || "";
+        setAttachedFiles((prev) => [
+          ...prev,
+          {
+            id: Math.random().toString(36).substring(2, 9),
+            name: file.name,
+            content: content,
+            sizeFormatted,
+          },
+        ]);
+      };
+
+      reader.readAsText(file);
+    });
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const removeAttachedFile = (id: string) => {
+    setAttachedFiles((prev) => prev.filter((f) => f.id !== id));
+  };
+
   const handleSend = async (textToSend?: string) => {
-    const text = textToSend || inputMessage;
-    if (!text.trim() || isLoading) return;
+    const baseText = textToSend || inputMessage;
+    if ((!baseText.trim() && attachedFiles.length === 0) || isLoading) return;
+
+    let finalPrompt = baseText;
+    if (attachedFiles.length > 0) {
+      const attachmentsText = attachedFiles
+        .map((f) => `--- ATTACHED CONTENT (${f.name}) ---\n${f.content}`)
+        .join("\n\n");
+      finalPrompt = baseText
+        ? `${baseText}\n\n${attachmentsText}`
+        : `Please analyze and optimize the following content:\n\n${attachmentsText}`;
+    }
+
     setInputMessage("");
-    await sendMessage(text);
+    setAttachedFiles([]);
+    await sendMessage(finalPrompt);
   };
 
   const handleVoiceRecorded = async (blob: Blob) => {
     await sendVoiceMessage(blob);
   };
 
-  const suggestedPrompts = [
-    {
-      title: "Viral X Thread & LinkedIn Strategy",
-      prompt: "Draft a 5-part X thread and a polished LinkedIn post about our new AI social media manager launch.",
-      icon: Sparkles,
-      color: "text-purple-400 bg-purple-500/10 border-purple-500/20",
-    },
-    {
-      title: "Instagram Carousel & Visual Prompts",
-      prompt: "Create an Instagram Carousel script with 4 slides on '5 Social Media Metrics That Actually Matter' plus image prompts.",
-      icon: ImageIcon,
-      color: "text-pink-400 bg-pink-500/10 border-pink-500/20",
-    },
-    {
-      title: "Content Calendar & Weekly Schedule",
-      prompt: "Generate a full 7-day multi-channel content calendar for a B2B SaaS startup with high-converting hooks.",
-      icon: Calendar,
-      color: "text-blue-400 bg-blue-500/10 border-blue-500/20",
-    },
-    {
-      title: "Optimize Existing Post Virality",
-      prompt: "Optimize this hook for max engagement: 'We launched our new product today and here is what happened...'",
-      icon: BarChart3,
-      color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-    },
-  ];
+  const suggestedPrompts = PROMPT_STARTERS[selectedMode] ?? PROMPT_STARTERS.auto;
+  const starterLabel = MODE_STARTER_LABELS[selectedMode] ?? MODE_STARTER_LABELS.auto;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-background relative overflow-hidden">
@@ -156,6 +188,58 @@ export function ChatInterface() {
 
                   {/* Message Content */}
                   <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
+
+                  {/* Agent Steps Accordion */}
+                  {msg.agentSteps && msg.agentSteps.length > 0 && (
+                    <div className="mt-3">
+                      <AgentStepsAccordion steps={msg.agentSteps} />
+                    </div>
+                  )}
+
+                  {/* Content Audit & Growth Diagnosis */}
+                  {msg.diagnosis && (
+                    <DiagnosisCard
+                      diagnosis={msg.diagnosis}
+                      exports={msg.exports}
+                      optimizedPosts={msg.optimizedPosts}
+                    />
+                  )}
+
+                  {/* Content Calendar Schedule */}
+                  {msg.calendar && msg.calendar.length > 0 && (
+                    <ContentCalendarView calendar={msg.calendar} exports={msg.exports} />
+                  )}
+
+                  {/* Platform Post Cards */}
+                  {(msg.platformPosts || msg.optimizedPosts) && (
+                    <PlatformPostCards
+                      posts={msg.platformPosts || msg.optimizedPosts || {}}
+                      exports={msg.exports}
+                    />
+                  )}
+
+                  {/* Image Prompt Cards */}
+                  {msg.imagePrompts && msg.imagePrompts.length > 0 && (
+                    <ImagePromptCard prompts={msg.imagePrompts} />
+                  )}
+
+                  {/* Interactive Action Buttons */}
+                  {msg.actions && msg.actions.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2 pt-2 border-t border-border/40">
+                      {msg.actions.map((act, idx) => (
+                        <Button
+                          key={idx}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => executeAction(act)}
+                          className="text-xs h-7 border-purple-500/30 hover:bg-purple-500/10 hover:text-purple-300"
+                        >
+                          <Zap className="w-3 h-3 mr-1 text-purple-400" />
+                          {act.label}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Render Agent Execution Steps */}
                   {msg.agentSteps && msg.agentSteps.length > 0 && (
@@ -244,7 +328,7 @@ export function ChatInterface() {
           <div className="text-xs text-muted-foreground mb-2.5 flex items-center justify-between font-medium">
             <div className="flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-              <span>Suggested Strategy Prompts</span>
+              <span>{starterLabel}</span>
             </div>
             <span className="text-[10px] text-muted-foreground/60 font-mono">Click to launch</span>
           </div>
@@ -281,6 +365,60 @@ export function ChatInterface() {
 
       {/* Input Bar & Controls */}
       <div className="p-3 sm:p-4 border-t border-border/60 bg-card/30 backdrop-blur-md shrink-0">
+        {/* Hidden File Input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+          multiple
+          accept=".txt,.md,.json,.csv,.js,.ts,.tsx,.jsx,.html,.css,.doc,.docx"
+          className="hidden"
+        />
+
+        {/* Attached Files Chips Bar */}
+        {attachedFiles.length > 0 && (
+          <div className="max-w-4xl mx-auto mb-2 flex flex-wrap gap-1.5 p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 backdrop-blur-sm">
+            <div className="text-[11px] font-semibold text-purple-300 flex items-center gap-1.5 w-full mb-1">
+              <Paperclip className="w-3.5 h-3.5 text-purple-400" />
+              <span>Attached Files ({attachedFiles.length})</span>
+            </div>
+            {attachedFiles.map((file) => (
+              <div
+                key={file.id}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-background/80 border border-purple-500/30 text-xs text-foreground font-medium shadow-sm"
+              >
+                <FileText className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                <span className="truncate max-w-[150px]">{file.name}</span>
+                <span className="text-[10px] text-muted-foreground font-mono">({file.sizeFormatted})</span>
+                <button
+                  type="button"
+                  onClick={() => removeAttachedFile(file.id)}
+                  className="p-0.5 rounded hover:bg-rose-500/20 hover:text-rose-300 text-muted-foreground transition-colors ml-1"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Optimize Mode Helper Banner */}
+        {selectedMode === "optimize" && attachedFiles.length === 0 && (
+          <div className="max-w-4xl mx-auto mb-2 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-[11px] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <UploadCloud className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span>Optimize Mode: Paste copy below or attach a draft file to optimize virality & hooks.</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="font-medium text-xs underline underline-offset-2 hover:text-white shrink-0 ml-2"
+            >
+              Attach File
+            </button>
+          </div>
+        )}
+
         <div className="max-w-4xl mx-auto flex items-center gap-2 bg-background border border-border/80 focus-within:border-purple-500/50 focus-within:ring-1 focus-within:ring-purple-500/30 rounded-2xl p-2 transition-all shadow-xl">
           {/* Voice Microphone Component */}
           <VoiceRecorderButton
@@ -288,18 +426,38 @@ export function ChatInterface() {
             disabled={isLoading}
           />
 
+          {/* Paperclip File Upload Button */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isLoading}
+            title="Attach file / draft document"
+            className="rounded-xl h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-accent shrink-0 relative"
+          >
+            <Paperclip className="w-4 h-4" />
+            {attachedFiles.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-purple-500 rounded-full border-2 border-background" />
+            )}
+          </Button>
+
           <Input
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-            placeholder="Ask Claire to write posts, analyze strategy, create visual prompts..."
+            placeholder={
+              selectedMode === "optimize"
+                ? "Paste post copy to optimize or ask Claire to analyze..."
+                : "Ask Claire to write posts, analyze strategy, create visual prompts..."
+            }
             className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent text-xs sm:text-sm placeholder:text-muted-foreground/60"
           />
 
           <Button
             type="button"
             onClick={() => handleSend()}
-            disabled={!inputMessage.trim() || isLoading}
+            disabled={(!inputMessage.trim() && attachedFiles.length === 0) || isLoading}
             size="icon"
             className="rounded-xl shrink-0 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-md shadow-purple-500/20"
           >

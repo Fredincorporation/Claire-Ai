@@ -1,11 +1,40 @@
 "use client";
 
-import { MessageSquare, Plus, Sparkles, Settings, Trash2, Layers, Compass, Zap, Search, FileEdit, X } from "lucide-react";
+import { MessageSquare, Plus, Sparkles, Settings, Trash2, Layers, Compass, Zap, Search, FileEdit, Calendar, X, Loader2, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useChat } from "@/context/chat-context";
 import { BrandSelector } from "@/components/chat/brand-selector";
 import { Mode } from "@/types/chat";
+
+function BackendFooterStatus() {
+  const { backendStatus } = useChat();
+
+  const labels = {
+    checking: "Connecting to backend…",
+    online: "Backend connected",
+    warming: "Server waking up…",
+    offline: "Backend unreachable",
+  } as const;
+
+  const dotColors = {
+    checking: "bg-amber-400 animate-pulse",
+    online: "bg-emerald-400",
+    warming: "bg-amber-400 animate-pulse",
+    offline: "bg-rose-400",
+  } as const;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={`w-2 h-2 rounded-full ${dotColors[backendStatus.status]}`} />
+      <span className="text-[11px] font-medium text-foreground/80">{labels[backendStatus.status]}</span>
+      {(backendStatus.status === "checking" || backendStatus.status === "warming") && (
+        <Loader2 className="w-3 h-3 text-amber-400 animate-spin" />
+      )}
+      {backendStatus.status === "offline" && <WifiOff className="w-3 h-3 text-rose-400" />}
+    </div>
+  );
+}
 
 export function Sidebar() {
   const {
@@ -29,6 +58,7 @@ export function Sidebar() {
     { id: "create", label: "Create Content", icon: Sparkles, description: "Draft Posts & Threads" },
     { id: "optimize", label: "Optimize Existing", icon: FileEdit, description: "Refine Hooks & Virality" },
     { id: "research", label: "Deep Research", icon: Search, description: "Analyze Market Trends" },
+    { id: "calendar", label: "Content Calendar", icon: Calendar, description: "Plan & Schedule Posts" },
   ];
 
   const availablePlatforms = [
@@ -205,10 +235,7 @@ export function Sidebar() {
 
         {/* Footer info */}
         <div className="p-3 border-t border-border/50 bg-background/30 flex items-center justify-between text-xs text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[11px] font-medium text-foreground/80">Groq Backend Ready</span>
-          </div>
+          <BackendFooterStatus />
           <span className="text-[10px] font-mono text-muted-foreground/60">v1.2.0</span>
         </div>
       </aside>

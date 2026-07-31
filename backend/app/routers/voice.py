@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.agents.supervisor import SupervisorAgent
+from app.core.auth import get_current_user
 from app.core.rate_limit import enforce_rate_limit
 from app.core.validation import (
     ALLOWED_AUDIO_CONTENT_TYPES,
@@ -35,6 +36,7 @@ async def voice_endpoint(
     conversation_id: Optional[str] = Form(None),
     brand_id: Optional[str] = Form("default"),
     mode: Optional[str] = Form("auto"),
+    user_id: str = Depends(get_current_user),
     _rate_limit: None = Depends(enforce_rate_limit),
 ):
     """
@@ -73,7 +75,8 @@ async def voice_endpoint(
         await memory_manager.save_message(
             conversation_id=conv_id,
             role="user",
-            content=f"[Voice Input] {transcription}"
+            content=f"[Voice Input] {transcription}",
+            user_id=user_id
         )
 
         supervisor = SupervisorAgent()
@@ -94,7 +97,8 @@ async def voice_endpoint(
             conversation_id=conv_id,
             role="assistant",
             content=reply,
-            agent_name=supervisor.name
+            agent_name=supervisor.name,
+            user_id=user_id
         )
 
         chat_resp = ChatResponse(

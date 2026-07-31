@@ -25,17 +25,27 @@ def _prune_window(timestamps: List[float], window_start: float) -> List[float]:
     return [ts for ts in timestamps if ts > window_start]
 
 
+def _get_path_limit(path: str) -> int:
+    """Returns specific request limits per minute depending on endpoint resource intensity."""
+    if "/voice" in path or "/generate" in path or "/image" in path:
+        return 10  # Tighter limit for AI voice transcription and image generation
+    return settings.RATE_LIMIT_REQUESTS  # Default 30 req/min for chat & standard endpoints
+
+
 async def enforce_rate_limit(request: Request) -> None:
     """
-    Reject requests that exceed RATE_LIMIT_REQUESTS within RATE_LIMIT_WINDOW_SECONDS.
+    Reject requests that exceed path-specific limits within RATE_LIMIT_WINDOW_SECONDS.
     """
     if not settings.RATE_LIMIT_ENABLED:
         return
 
-    key = _client_key(request)
+    client_ip = _client_key(request)
+    path = request.url.path
+    key = f"{client_ip}:{path}"
+
     now = time.monotonic()
     window = settings.RATE_LIMIT_WINDOW_SECONDS
-    limit = settings.RATE_LIMIT_REQUESTS
+    limit = _get_path_limit(path)
     window_start = now - window
 
     timestamps = _prune_window(_request_log[key], window_start)
@@ -44,7 +54,7 @@ async def enforce_rate_limit(request: Request) -> None:
         retry_after = int(window - (now - timestamps[0])) + 1
         raise HTTPException(
             status_code=429,
-            detail=f"Rate limit exceeded. Try again in {retry_after} seconds.",
+            detail=f"Rate limit exceeded for {path}. Try again in {retry_after} seconds.",
             headers={"Retry-After": str(retry_after)},
         )
 

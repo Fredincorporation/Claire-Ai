@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from app.core.platform_specs import VALID_PLATFORMS
 
-VALID_MODES = frozenset({"auto", "create", "optimize", "research", "chat"})
+VALID_MODES = frozenset({"auto", "create", "optimize", "research", "calendar", "chat"})
 
 BRAND_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 CONVERSATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")

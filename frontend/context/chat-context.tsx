@@ -1,7 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState } from "react";
 import { Message, Conversation, Mode, ActionItem } from "@/types/chat";
+import { BackendStatus, useBackendStatus } from "@/hooks/use-backend-status";
+import { useAuth } from "@/context/auth-context";
 
 interface ChatContextType {
   conversations: Conversation[];
@@ -13,6 +15,7 @@ interface ChatContextType {
   isLoading: boolean;
   isMobileSidebarOpen: boolean;
   apiError: string | null;
+  backendStatus: BackendStatus;
   setActiveConversationId: (id: string) => void;
   setSelectedBrandId: (id: string) => void;
   setSelectedMode: (mode: Mode) => void;
@@ -41,6 +44,7 @@ const DEFAULT_CONVERSATION_ID = "conv_default_1";
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
+  const { token } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([
     {
       id: DEFAULT_CONVERSATION_ID,
@@ -66,6 +70,54 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+
+  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+  const backendStatus = useBackendStatus(baseUrl);
+
+  // Restore conversation history from Supabase/backend when active conversation changes
+  React.useEffect(() => {
+    const restoreHistory = async () => {
+      if (!activeConversationId) return;
+      try {
+        const headers: Record<string, string> = {};
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+
+        const res = await fetch(`${baseUrl}/api/v1/conversations/${activeConversationId}`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
+            const restoredMsgs: Message[] = data.messages.map((m: any, idx: number) => ({
+              id: m.id || `restored_${idx}`,
+              role: m.role,
+              content: m.content,
+              agentName: m.agent_name,
+              platformPosts: m.metadata?.platform_posts || undefined,
+              optimizedPosts: m.metadata?.optimized_posts || undefined,
+              diagnosis: m.metadata?.diagnosis || undefined,
+              calendar: m.metadata?.calendar || undefined,
+              exports: m.metadata?.exports || undefined,
+              imagePrompts: m.metadata?.image_prompts || undefined,
+              agentSteps: m.metadata?.agent_steps || undefined,
+              actions: m.metadata?.actions || undefined,
+              intent: m.metadata?.intent || undefined,
+              createdAt: m.created_at || new Date().toISOString(),
+            }));
+
+            setConversations((prev) =>
+              prev.map((c) => (c.id === activeConversationId ? { ...c, messages: restoredMsgs } : c))
+            );
+          }
+        }
+      } catch (err) {
+        console.warn("Could not restore conversation history from backend:", err);
+      }
+    };
+
+    const currentConv = conversations.find((c) => c.id === activeConversationId);
+    if (currentConv && currentConv.messages.length <= 1) {
+      restoreHistory();
+    }
+  }, [activeConversationId, baseUrl]);
 
   // Get active conversation messages
   const activeConv = conversations.find((c) => c.id === activeConversationId);
@@ -153,8 +205,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const clearApiError = () => setApiError(null);
 
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
 
@@ -181,9 +231,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           agent_name: m.agentName || undefined,
         }));
 
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       const res = await fetch(`${baseUrl}/api/v1/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           message: text,
           conversation_id: activeConversationId,
@@ -207,6 +262,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         content: data.reply,
         agentName: data.agent_name || "Claire Supervisor",
         platformPosts: data.platform_posts || undefined,
+        optimizedPosts: data.optimized_posts || undefined,
+        diagnosis: data.diagnosis || undefined,
+        calendar: data.calendar || undefined,
+        exports: data.exports || undefined,
         imagePrompts: data.image_prompts || undefined,
         agentSteps: data.agent_steps || undefined,
         actions: data.actions || undefined,
@@ -245,8 +304,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       formData.append("brand_id", selectedBrandId);
       formData.append("mode", selectedMode);
 
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       const res = await fetch(`${baseUrl}/api/v1/voice`, {
         method: "POST",
+        headers,
         body: formData,
       });
 
@@ -273,6 +336,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         content: chatResp.reply,
         agentName: chatResp.agent_name || "Claire Supervisor",
         platformPosts: chatResp.platform_posts || undefined,
+        optimizedPosts: chatResp.optimized_posts || undefined,
+        diagnosis: chatResp.diagnosis || undefined,
+        calendar: chatResp.calendar || undefined,
+        exports: chatResp.exports || undefined,
         imagePrompts: chatResp.image_prompts || undefined,
         agentSteps: chatResp.agent_steps || undefined,
         actions: chatResp.actions || undefined,
@@ -315,6 +382,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         isMobileSidebarOpen,
         apiError,
+        backendStatus,
         setActiveConversationId,
         setSelectedBrandId,
         setSelectedMode,

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
 
 from app.agents.supervisor import SupervisorAgent
+from app.core.auth import get_current_user
 from app.core.rate_limit import enforce_rate_limit
 from app.core.validation import (
     MAX_HISTORY_CONTENT_LENGTH,
@@ -95,6 +96,10 @@ class ChatResponse(BaseModel):
     conversation_id: str
     agent_name: str
     platform_posts: Optional[Dict[str, str]] = None
+    optimized_posts: Optional[Dict[str, str]] = None
+    diagnosis: Optional[Dict[str, Any]] = None
+    calendar: Optional[List[Dict[str, Any]]] = None
+    exports: Optional[Dict[str, str]] = None
     image_prompts: Optional[List[Dict[str, Any]]] = None
     agent_steps: Optional[List[Dict[str, Any]]] = None
     actions: Optional[List[Dict[str, Any]]] = None
@@ -104,6 +109,7 @@ class ChatResponse(BaseModel):
 @router.post("", response_model=ChatResponse)
 async def chat_endpoint(
     request: ChatRequest,
+    user_id: str = Depends(get_current_user),
     _rate_limit: None = Depends(enforce_rate_limit),
 ):
     """
@@ -115,14 +121,16 @@ async def chat_endpoint(
         await memory_manager.save_message(
             conversation_id=conv_id,
             role="user",
-            content=request.message
+            content=request.message,
+            user_id=user_id
         )
 
         supervisor = SupervisorAgent()
         context = {
             "brand_id": request.brand_id,
             "mode": request.mode,
-            "platforms": request.platforms
+            "platforms": request.platforms,
+            "user_id": user_id
         }
 
         response = await supervisor.process_message(
@@ -133,11 +141,26 @@ async def chat_endpoint(
 
         reply = response.get("reply", "No response generated.")
 
+        # Save assistant message with full metadata
+        metadata = {
+            "platform_posts": response.get("platform_posts"),
+            "optimized_posts": response.get("optimized_posts"),
+            "diagnosis": response.get("diagnosis"),
+            "calendar": response.get("calendar"),
+            "exports": response.get("exports"),
+            "image_prompts": response.get("image_prompts"),
+            "agent_steps": response.get("agent_steps"),
+            "actions": response.get("actions"),
+            "intent": response.get("intent")
+        }
+
         await memory_manager.save_message(
             conversation_id=conv_id,
             role="assistant",
             content=reply,
-            agent_name=supervisor.name
+            agent_name=supervisor.name,
+            metadata=metadata,
+            user_id=user_id
         )
 
         return ChatResponse(
@@ -145,6 +168,10 @@ async def chat_endpoint(
             conversation_id=conv_id,
             agent_name=supervisor.name,
             platform_posts=response.get("platform_posts"),
+            optimized_posts=response.get("optimized_posts"),
+            diagnosis=response.get("diagnosis"),
+            calendar=response.get("calendar"),
+            exports=response.get("exports"),
             image_prompts=response.get("image_prompts"),
             agent_steps=response.get("agent_steps"),
             actions=response.get("actions"),

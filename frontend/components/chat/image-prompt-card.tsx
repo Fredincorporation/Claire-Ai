@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Image as ImageIcon, Copy, Check, Sparkles, Wand2, X, RefreshCw, Download } from "lucide-react";
+import { Image as ImageIcon, Copy, Check, Wand2, X, RefreshCw, Download, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ImagePrompt } from "@/types/chat";
 
@@ -9,11 +9,15 @@ interface ImagePromptCardProps {
   prompts: ImagePrompt[];
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+
 export function ImagePromptCard({ prompts }: ImagePromptCardProps) {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [activeModalPrompt, setActiveModalPrompt] = useState<ImagePrompt | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
+  const [imageSource, setImageSource] = useState<"cloudflare" | "simulation" | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   if (!prompts || prompts.length === 0) return null;
 
@@ -23,19 +27,55 @@ export function ImagePromptCard({ prompts }: ImagePromptCardProps) {
     setTimeout(() => setCopiedIdx(null), 2000);
   };
 
-  const handleOpenGenerator = (promptItem: ImagePrompt) => {
-    setActiveModalPrompt(promptItem);
+  const generateImage = async (promptItem: ImagePrompt) => {
     setIsGenerating(true);
     setGeneratedImageUrl(null);
+    setImageSource(null);
+    setGenerateError(null);
 
-    // Simulate high quality AI image generation delay
-    setTimeout(() => {
-      // Pick a beautiful Unsplash AI art / social image based on keywords
-      const keyword = encodeURIComponent(promptItem.prompt.slice(0, 30) || "modern tech concept");
-      setGeneratedImageUrl(`https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1000&auto=format&fit=crop`);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/generate-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: promptItem.prompt,
+          aspect_ratio: promptItem.aspect_ratio,
+          platform: promptItem.platform,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Generation failed (${res.status})`);
+      }
+
+      const data = await res.json();
+      setGeneratedImageUrl(data.image_url);
+      setImageSource(data.source === "cloudflare" ? "cloudflare" : "simulation");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Image generation failed";
+      setGenerateError(message);
+      // Client-side simulation fallback
+      setGeneratedImageUrl(
+        "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1000&auto=format&fit=crop"
+      );
+      setImageSource("simulation");
+    } finally {
       setIsGenerating(false);
-    }, 1800);
+    }
   };
+
+  const handleOpenGenerator = (promptItem: ImagePrompt) => {
+    setActiveModalPrompt(promptItem);
+    generateImage(promptItem);
+  };
+
+  const sourceLabel =
+    imageSource === "cloudflare"
+      ? "Cloudflare Workers AI"
+      : imageSource === "simulation"
+        ? "Preview simulation"
+        : "AI Image Preview Studio";
 
   return (
     <div className="my-4 space-y-3">
@@ -95,7 +135,7 @@ export function ImagePromptCard({ prompts }: ImagePromptCardProps) {
 
             <div className="flex items-center justify-between pt-1">
               <span className="text-[11px] text-muted-foreground italic">
-                Ideal for Midjourney, Flux, Dall-E 3
+                Midjourney, Flux, DALL-E 3, or Cloudflare AI
               </span>
               <Button
                 size="sm"
@@ -110,7 +150,6 @@ export function ImagePromptCard({ prompts }: ImagePromptCardProps) {
         ))}
       </div>
 
-      {/* AI Image Generation Preview Modal */}
       {activeModalPrompt && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-card border border-border/80 rounded-2xl max-w-xl w-full p-6 shadow-2xl relative space-y-4">
@@ -127,7 +166,7 @@ export function ImagePromptCard({ prompts }: ImagePromptCardProps) {
               </div>
               <div>
                 <h3 className="font-semibold text-base text-foreground">AI Image Preview Studio</h3>
-                <p className="text-xs text-muted-foreground">Powered by Flux & Midjourney simulation</p>
+                <p className="text-xs text-muted-foreground">Powered by {sourceLabel}</p>
               </div>
             </div>
 
@@ -135,12 +174,21 @@ export function ImagePromptCard({ prompts }: ImagePromptCardProps) {
               {activeModalPrompt.prompt}
             </div>
 
+            {generateError && (
+              <div className="flex items-center gap-2 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{generateError} — showing simulation fallback.</span>
+              </div>
+            )}
+
             <div className="relative rounded-xl overflow-hidden border border-border/60 bg-muted aspect-video flex items-center justify-center">
               {isGenerating ? (
                 <div className="flex flex-col items-center gap-3 text-purple-400">
                   <RefreshCw className="w-8 h-8 animate-spin" />
-                  <span className="text-xs font-medium text-foreground">Rendering High-Res Visual...</span>
-                  <span className="text-[10px] text-muted-foreground">Applying lighting & texture model</span>
+                  <span className="text-xs font-medium text-foreground">Rendering visual...</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {imageSource === null ? "Trying Cloudflare Workers AI" : "Applying model"}
+                  </span>
                 </div>
               ) : generatedImageUrl ? (
                 <div className="relative w-full h-full group">
@@ -150,11 +198,14 @@ export function ImagePromptCard({ prompts }: ImagePromptCardProps) {
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-4">
-                    <span className="text-xs text-white font-medium">1024x1024 • PNG</span>
+                    <span className="text-xs text-white font-medium">
+                      {imageSource === "cloudflare" ? "Workers AI • PNG" : "Simulation • Preview"}
+                    </span>
                     <a
                       href={generatedImageUrl}
                       target="_blank"
                       rel="noreferrer"
+                      download={imageSource === "cloudflare" ? "claire-generated.png" : undefined}
                       className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs backdrop-blur-md flex items-center gap-1.5 font-medium"
                     >
                       <Download className="w-3.5 h-3.5" /> Download
@@ -168,7 +219,7 @@ export function ImagePromptCard({ prompts }: ImagePromptCardProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleOpenGenerator(activeModalPrompt)}
+                onClick={() => activeModalPrompt && generateImage(activeModalPrompt)}
                 disabled={isGenerating}
                 className="text-xs"
               >

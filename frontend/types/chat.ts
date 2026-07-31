@@ -2,7 +2,7 @@ export type Role = 'user' | 'assistant' | 'system';
 
 export type Platform = 'x' | 'linkedin' | 'instagram' | 'tiktok' | 'threads';
 
-export type Mode = 'auto' | 'create' | 'optimize' | 'research';
+export type Mode = 'auto' | 'create' | 'optimize' | 'research' | 'calendar';
 
 export interface ActionItem {
   id?: string;
@@ -35,6 +35,10 @@ export interface Message {
   transcription?: string;
   agentName?: string;
   platformPosts?: Record<string, string>;
+  optimizedPosts?: Record<string, string>;
+  diagnosis?: Record<string, any>;
+  calendar?: Record<string, any>[];
+  exports?: Record<string, string>;
   imagePrompts?: ImagePrompt[];
   agentSteps?: AgentStep[];
   actions?: ActionItem[];
@@ -57,8 +61,14 @@ export interface Conversation {
 export interface BrandProfile {
   id: string;
   name: string;
-  tagline: string;
-  tone: string;
-  targetAudience: string;
-  color: string;
+  tagline?: string;
+  tone_of_voice: string;
+  target_audience: string;
+  tone?: string;
+  targetAudience?: string;
+  content_pillars?: string[];
+  style_guidelines?: string;
+  visual_style?: string;
+  do_not_use?: string[];
+  color?: string;
 }
