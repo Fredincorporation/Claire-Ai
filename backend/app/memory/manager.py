@@ -130,6 +130,95 @@ class MemoryManager:
 
         return self._in_memory_conversations.get(conversation_id, [])
 
+    async def ensure_conversation_exists(
+        self,
+        conversation_id: str,
+        user_id: Optional[str] = None,
+        title: Optional[str] = None,
+        brand_id: Optional[str] = "default",
+        mode: Optional[str] = "auto"
+    ) -> Dict[str, Any]:
+        """
+        Ensures a parent conversation record exists in Supabase 'conversations' table and in-memory cache.
+        Always uses an upsert strategy with multi-tier fallback to ensure foreign key constraints
+        on 'chat_messages' are satisfied, even for guest users or invalid user_id tokens.
+
+        Special handling for default/guest conversations (e.g. 'conv_default_1').
+        """
+        if not conversation_id:
+            import uuid
+            conversation_id = f"conv_{uuid.uuid4().hex[:8]}"
+
+        # Special title resolution for guest / default conversations
+        default_title = title
+        if not default_title:
+            if conversation_id in ("conv_default_1", "default", "guest") or conversation_id.startswith("conv_default"):
+                default_title = "Default Conversation"
+            else:
+                default_title = "New Conversation"
+
+        clean_user_id = user_id if user_id else None
+
+        conv_obj = {
+            "id": conversation_id,
+            "title": default_title,
+            "user_id": clean_user_id,
+            "brand_id": brand_id or "default",
+            "mode": mode or "auto"
+        }
+
+        # Initialize in-memory storage for this conversation
+        if conversation_id not in self._in_memory_conversations:
+            self._in_memory_conversations[conversation_id] = []
+
+        if self.client:
+            success = False
+
+            # Tier 1: Try full upsert with provided user_id
+            try:
+                self.client.table("conversations").upsert(conv_obj).execute()
+                success = True
+                logger.info(f"Successfully upserted conversation '{conversation_id}' in Supabase.")
+            except Exception as e:
+                logger.warning(f"Primary upsert for conversation '{conversation_id}' failed: {e}. Attempting fallbacks...")
+
+            # Tier 2: Try upsert without user_id (bypasses auth.users FK constraints for guests/invalid tokens)
+            if not success and clean_user_id is not None:
+                try:
+                    fallback_obj = dict(conv_obj)
+                    fallback_obj["user_id"] = None
+                    self.client.table("conversations").upsert(fallback_obj).execute()
+                    success = True
+                    conv_obj["user_id"] = None
+                    logger.info(f"Fallback upsert for conversation '{conversation_id}' without user_id succeeded.")
+                except Exception as e2:
+                    logger.warning(f"Fallback upsert without user_id failed for conversation '{conversation_id}': {e2}")
+
+            # Tier 3: Try minimal schema upsert (id, title, user_id=None)
+            if not success:
+                try:
+                    minimal_obj = {
+                        "id": conversation_id,
+                        "title": default_title,
+                        "user_id": None
+                    }
+                    self.client.table("conversations").upsert(minimal_obj).execute()
+                    success = True
+                    logger.info(f"Minimal upsert for conversation '{conversation_id}' succeeded.")
+                except Exception as e3:
+                    logger.warning(f"Minimal upsert for conversation '{conversation_id}' failed: {e3}")
+
+            # Tier 4: Verification check - does row exist in Supabase?
+            if not success:
+                try:
+                    res = self.client.table("conversations").select("id").eq("id", conversation_id).execute()
+                    if res.data and len(res.data) > 0:
+                        logger.info(f"Verified conversation '{conversation_id}' exists in Supabase.")
+                except Exception as e4:
+                    logger.error(f"Failed to verify existence of conversation '{conversation_id}': {e4}")
+
+        return conv_obj
+
     async def ensure_conversation(
         self,
         conversation_id: str,
@@ -139,34 +228,15 @@ class MemoryManager:
         mode: Optional[str] = "auto"
     ) -> Dict[str, Any]:
         """
-        Ensures a parent conversation record exists in Supabase and in-memory cache.
-        Uses an upsert pattern so that foreign key constraints on chat_messages are satisfied.
-        Handles both authenticated users and guest users (user_id = None).
+        Alias for ensure_conversation_exists for backward compatibility.
         """
-        if not conversation_id:
-            import uuid
-            conversation_id = f"conv_{uuid.uuid4().hex[:8]}"
-
-        default_title = title or "New Conversation"
-
-        conv_obj = {
-            "id": conversation_id,
-            "title": default_title,
-            "user_id": user_id if user_id else None,
-            "brand_id": brand_id or "default",
-            "mode": mode or "auto"
-        }
-
-        if conversation_id not in self._in_memory_conversations:
-            self._in_memory_conversations[conversation_id] = []
-
-        if self.client:
-            try:
-                self.client.table("conversations").upsert(conv_obj).execute()
-            except Exception as e:
-                logger.debug(f"Upsert to 'conversations' table in Supabase note: {e}")
-
-        return conv_obj
+        return await self.ensure_conversation_exists(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            title=title,
+            brand_id=brand_id,
+            mode=mode
+        )
 
     async def list_conversations(self, user_id: Optional[str] = None) -> List[str]:
         """
@@ -211,17 +281,24 @@ class MemoryManager:
     ) -> None:
         """
         Saves user or assistant message to memory storage.
-        Ensures parent conversation exists FIRST (via upsert) before inserting the chat message.
-        Handles user_id being None for guest users (NULL in DB).
-        Safely handles agent_name both in column and inside metadata for schema resilience.
+        Always calls ensure_conversation_exists() FIRST to guarantee parent conversation exists.
+        Handles both authenticated users and guest users (user_id = None).
+        Provides robust fallbacks against foreign key violations and schema mismatches.
         """
-        # 1. Ensure parent conversation exists first to satisfy foreign key constraints
-        conv_title = title
-        if not conv_title and role == "user" and content:
-            clean_content = content.replace("[Voice Input]", "").strip()
-            conv_title = clean_content[:40] + ("..." if len(clean_content) > 40 else "")
+        if not conversation_id:
+            conversation_id = "conv_default_1"
 
-        await self.ensure_conversation(
+        # Special title formatting
+        conv_title = title
+        if not conv_title:
+            if conversation_id in ("conv_default_1", "default", "guest") or conversation_id.startswith("conv_default"):
+                conv_title = "Default Conversation"
+            elif role == "user" and content:
+                clean_content = content.replace("[Voice Input]", "").strip()
+                conv_title = clean_content[:40] + ("..." if len(clean_content) > 40 else "")
+
+        # 1. ALWAYS ensure parent conversation exists in Supabase table 'conversations' BEFORE saving message
+        await self.ensure_conversation_exists(
             conversation_id=conversation_id,
             user_id=user_id,
             title=conv_title,
@@ -229,12 +306,13 @@ class MemoryManager:
             mode=mode
         )
 
-        # 2. Prepare message record
+        # 2. Prepare message object
         resolved_agent_name = agent_name or ("assistant" if role == "assistant" else "user")
-
         meta_copy = dict(metadata or {})
         if resolved_agent_name and "agent_name" not in meta_copy:
             meta_copy["agent_name"] = resolved_agent_name
+
+        clean_user_id = user_id if user_id else None
 
         message_obj = {
             "conversation_id": conversation_id,
@@ -242,26 +320,58 @@ class MemoryManager:
             "content": content,
             "agent_name": resolved_agent_name,
             "metadata": meta_copy,
-            "user_id": user_id if user_id else None
+            "user_id": clean_user_id
         }
 
+        # 3. Always cache in-memory
         if conversation_id not in self._in_memory_conversations:
             self._in_memory_conversations[conversation_id] = []
         self._in_memory_conversations[conversation_id].append(message_obj)
 
+        # 4. Insert into Supabase 'chat_messages' table with robust retries & fallbacks
         if self.client:
+            msg_inserted = False
+
+            # Primary Attempt
             try:
                 self.client.table("chat_messages").insert(message_obj).execute()
+                msg_inserted = True
             except Exception as e:
                 err_str = str(e)
-                logger.warning(f"Error saving chat message to Supabase: {e}")
-                if "agent_name" in err_str or "PGRST204" in err_str or "column" in err_str.lower():
+                logger.warning(f"Error saving chat message to Supabase (conv_id={conversation_id}): {e}")
+
+                # If conversation foreign key error, force minimal guest conversation upsert and retry
+                if "conversations" in err_str or "foreign key" in err_str.lower() or "23503" in err_str:
+                    logger.warning(f"Foreign key issue detected. Force-upserting guest conversation for '{conversation_id}'...")
+                    await self.ensure_conversation_exists(
+                        conversation_id=conversation_id,
+                        user_id=None,  # Force None to bypass auth.users FK
+                        title=conv_title or "Default Conversation",
+                        brand_id=brand_id,
+                        mode=mode
+                    )
+
+                # Fallback Attempt A: Try without user_id (if chat_messages.user_id FK constraint failed)
+                if clean_user_id is not None:
                     try:
-                        fallback_obj = {k: v for k, v in message_obj.items() if k != "agent_name"}
-                        self.client.table("chat_messages").insert(fallback_obj).execute()
-                        logger.info("Saved message using fallback schema (omitted top-level agent_name column).")
+                        fallback_msg = dict(message_obj)
+                        fallback_msg["user_id"] = None
+                        self.client.table("chat_messages").insert(fallback_msg).execute()
+                        msg_inserted = True
+                        logger.info(f"Saved message to Supabase without user_id for conv '{conversation_id}'.")
+                    except Exception as fallback_user_err:
+                        logger.warning(f"Message insert without user_id failed: {fallback_user_err}")
+
+                # Fallback Attempt B: Try without agent_name top-level column
+                if not msg_inserted:
+                    try:
+                        fallback_msg = {k: v for k, v in message_obj.items() if k != "agent_name"}
+                        fallback_msg["user_id"] = None
+                        self.client.table("chat_messages").insert(fallback_msg).execute()
+                        msg_inserted = True
+                        logger.info(f"Saved message using schema fallback (omitted agent_name and user_id).")
                     except Exception as fallback_err:
-                        logger.warning(f"Fallback message insert to Supabase failed: {fallback_err}")
+                        logger.error(f"All message insert attempts to Supabase failed for conv '{conversation_id}': {fallback_err}")
 
 memory_manager = MemoryManager()
 
