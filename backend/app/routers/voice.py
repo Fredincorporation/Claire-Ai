@@ -36,7 +36,7 @@ async def voice_endpoint(
     conversation_id: Optional[str] = Form(None),
     brand_id: Optional[str] = Form("default"),
     mode: Optional[str] = Form("auto"),
-    user_id: str = Depends(get_current_user),
+    user_id: Optional[str] = Depends(get_current_user),
     _rate_limit: None = Depends(enforce_rate_limit),
 ):
     """
@@ -83,7 +83,8 @@ async def voice_endpoint(
         context = {
             "brand_id": validated_brand_id,
             "mode": validated_mode,
-            "platforms": ["x", "linkedin", "instagram", "tiktok", "threads"]
+            "platforms": ["x", "linkedin", "instagram", "tiktok", "threads"],
+            "user_id": user_id
         }
 
         response = await supervisor.process_message(
@@ -93,11 +94,20 @@ async def voice_endpoint(
 
         reply = response.get("reply", "No response generated from voice message.")
 
+        metadata = {
+            "platform_posts": response.get("platform_posts"),
+            "image_prompts": response.get("image_prompts"),
+            "agent_steps": response.get("agent_steps"),
+            "actions": response.get("actions"),
+            "intent": response.get("intent")
+        }
+
         await memory_manager.save_message(
             conversation_id=conv_id,
             role="assistant",
             content=reply,
             agent_name=supervisor.name,
+            metadata=metadata,
             user_id=user_id
         )
 

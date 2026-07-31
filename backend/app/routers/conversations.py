@@ -8,7 +8,7 @@ router = APIRouter(prefix="/conversations", tags=["Conversations History"])
 
 
 @router.get("")
-async def list_conversations(user_id: str = Depends(get_current_user)):
+async def list_conversations(user_id: Optional[str] = Depends(get_current_user)):
     """
     List all active/saved conversation IDs for the user.
     """
@@ -17,7 +17,7 @@ async def list_conversations(user_id: str = Depends(get_current_user)):
 
 
 @router.get("/{conversation_id}")
-async def get_conversation(conversation_id: str, user_id: str = Depends(get_current_user)):
+async def get_conversation(conversation_id: str, user_id: Optional[str] = Depends(get_current_user)):
     """
     Get full conversation messages and generated assets for restoration.
     """

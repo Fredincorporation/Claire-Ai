@@ -109,7 +109,7 @@ class ChatResponse(BaseModel):
 @router.post("", response_model=ChatResponse)
 async def chat_endpoint(
     request: ChatRequest,
-    user_id: str = Depends(get_current_user),
+    user_id: Optional[str] = Depends(get_current_user),
     _rate_limit: None = Depends(enforce_rate_limit),
 ):
     """

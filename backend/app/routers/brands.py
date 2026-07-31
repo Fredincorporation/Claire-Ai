@@ -21,7 +21,7 @@ class BrandProfilePayload(BaseModel):
 
 
 @router.get("/{brand_id}")
-async def get_brand(brand_id: str, user_id: str = Depends(get_current_user)):
+async def get_brand(brand_id: str, user_id: Optional[str] = Depends(get_current_user)):
     """
     Get brand voice profile from Supabase or memory store.
     """
@@ -30,7 +30,7 @@ async def get_brand(brand_id: str, user_id: str = Depends(get_current_user)):
 
 
 @router.post("/{brand_id}")
-async def save_brand(brand_id: str, payload: BrandProfilePayload, user_id: str = Depends(get_current_user)):
+async def save_brand(brand_id: str, payload: BrandProfilePayload, user_id: Optional[str] = Depends(get_current_user)):
     """
     Save or update brand voice profile in Supabase & memory.
     """

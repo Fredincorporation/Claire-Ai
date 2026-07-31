@@ -43,15 +43,15 @@ async def get_optional_user(
 
 async def get_current_user(
     user_id: Optional[str] = Depends(get_optional_user)
-) -> str:
+) -> Optional[str]:
     """
-    Requires an authenticated user_id. Raises 401 if missing when REQUIRE_AUTH is True,
-    or returns guest user ID for unauthenticated guest sessions.
+    Returns user_id (UUID string) for authenticated users.
+    If unauthenticated and REQUIRE_AUTH is True, raises 401.
+    If unauthenticated and REQUIRE_AUTH is False, returns None (guest / demo mode).
+    Never returns non-UUID strings like 'guest_user'.
     """
     if not user_id:
-        if settings.ENVIRONMENT == "development" and not (settings.SUPABASE_URL and settings.SUPABASE_ANON_KEY):
-            return "guest_dev_user"
         if settings.REQUIRE_AUTH:
             raise HTTPException(status_code=401, detail="Authentication required. Please sign in.")
-        return "guest_user"
+        return None
     return user_id

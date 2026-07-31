@@ -34,7 +34,7 @@ class ImageGenerateResponse(BaseModel):
 @router.post("/images/generate", response_model=ImageGenerateResponse)
 async def generate_image(
     request: ImageGenerateRequest,
-    user_id: str = Depends(get_current_user),
+    user_id: Optional[str] = Depends(get_current_user),
     _rate_limit: None = Depends(enforce_rate_limit),
 ):
     """
