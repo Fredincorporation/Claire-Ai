@@ -6,7 +6,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 PING_URL = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:8000") + "/api/v1/keep-alive"
-PING_INTERVAL_SECONDS = 14 * 60  # Ping every 14 minutes (Render sleeps after 15 mins)
+PING_INTERVAL_SECONDS = 13 * 60  # Ping every 13 minutes (infrequent 12-14 min window to conserve Render free hours)
 
 def ping_health():
     try:

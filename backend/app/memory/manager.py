@@ -51,11 +51,16 @@ class MemoryManager:
         Retrieves brand voice and strategy profile with TTL caching and user filtering.
         """
         target_id = brand_id or "default"
-        cache_key = f"brand_{user_id or 'anon'}_{target_id}"
+        keys_to_check = [
+            f"brand_{user_id}_{target_id}" if user_id else None,
+            f"brand_anon_{target_id}",
+            f"brand_{target_id}"
+        ]
 
         now = time.time()
-        if cache_key in self._in_memory_brands and (now - self._cache_timestamps.get(cache_key, 0)) < CACHE_TTL_SECONDS:
-            return self._in_memory_brands[cache_key]
+        for k in keys_to_check:
+            if k and k in self._in_memory_brands and (now - self._cache_timestamps.get(k, 0)) < CACHE_TTL_SECONDS:
+                return self._in_memory_brands[k]
 
         if self.client:
             try:
@@ -65,6 +70,7 @@ class MemoryManager:
                 response = query.execute()
                 if response.data and len(response.data) > 0:
                     profile = response.data[0]
+                    cache_key = f"brand_{user_id or 'anon'}_{target_id}"
                     self._in_memory_brands[cache_key] = profile
                     self._cache_timestamps[cache_key] = now
                     return profile
@@ -79,15 +85,22 @@ class MemoryManager:
 
     async def save_brand_profile(self, brand_id: str, profile_data: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Saves or updates brand profile.
+        Saves or updates brand profile and immediately updates all in-memory cache keys.
         """
         profile_data["id"] = brand_id
         if user_id:
             profile_data["user_id"] = user_id
 
-        cache_key = f"brand_{user_id or 'anon'}_{brand_id}"
-        self._in_memory_brands[cache_key] = profile_data
-        self._cache_timestamps[cache_key] = time.time()
+        now = time.time()
+        keys_to_update = [
+            f"brand_{user_id}_{brand_id}" if user_id else None,
+            f"brand_anon_{brand_id}",
+            f"brand_{brand_id}"
+        ]
+        for k in keys_to_update:
+            if k:
+                self._in_memory_brands[k] = profile_data
+                self._cache_timestamps[k] = now
 
         if self.client:
             try:

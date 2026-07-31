@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/context/auth-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -364,12 +365,18 @@ export function LandingPage({ onLaunchApp }: LandingPageProps) {
         {/* Footer */}
         <footer className="py-8 border-t border-white/5 text-center text-xs text-neutral-500 mt-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <p>© {new Date().getFullYear()} Claire AI Social Media Manager.</p>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <Link href="/terms" className="text-neutral-400 hover:text-white transition">
+              Terms of Service
+            </Link>
+            <span>•</span>
+            <Link href="/privacy" className="text-neutral-400 hover:text-white transition">
+              Privacy Policy
+            </Link>
+            <span>•</span>
             <span className="text-neutral-400">Fast Groq Engine</span>
             <span>•</span>
             <span className="text-neutral-400">Supabase Persistent Storage</span>
-            <span>•</span>
-            <span className="text-neutral-400">Cloudflare Workers AI</span>
           </div>
         </footer>
       </div>

@@ -55,10 +55,14 @@ export function ExportMenu({ exports, posts, title = "Export Assets" }: ExportMe
   const handleDownloadCSV = () => {
     let csv = exports?.buffer_csv;
     if (!csv && posts) {
-      csv = "Date,Time,Platform,Post Content\n" + Object.entries(posts)
+      const today = new Date();
+      csv = "Date,Time,Text,Platform\n" + Object.entries(posts)
         .map(([p, c], idx) => {
-          const clean = c.replace(/"/g, '""').replace(/\n/g, " ");
-          return `2025-05-0${idx + 1},09:00 AM,${p.toUpperCase()},"${clean}"`;
+          const postDate = new Date(today);
+          postDate.setDate(today.getDate() + idx + 1);
+          const dateStr = postDate.toISOString().split("T")[0];
+          const clean = c.replace(/"/g, '""');
+          return `"${dateStr}","09:00 AM","${clean}","${p.toUpperCase()}"`;
         })
         .join("\n");
     }

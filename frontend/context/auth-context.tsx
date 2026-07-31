@@ -14,7 +14,6 @@ interface AuthContextType {
   setIsAuthModalOpen: (open: boolean) => void;
   signInWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUpWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signInWithGoogle: () => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   continueAsGuest: () => void;
 }
@@ -79,19 +78,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error };
   };
 
-  const signInWithGoogle = async () => {
-    if (!isSupabaseConfigured()) {
-      return { error: new Error("Supabase is not configured yet. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.") };
-    }
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-      },
-    });
-    return { error };
-  };
-
   const signOut = async () => {
     if (isSupabaseConfigured()) {
       await supabase.auth.signOut();
@@ -119,7 +105,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsAuthModalOpen,
         signInWithEmail,
         signUpWithEmail,
-        signInWithGoogle,
         signOut,
         continueAsGuest,
       }}

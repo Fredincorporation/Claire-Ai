@@ -1,8 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
+
+export const viewport: Viewport = {
+  themeColor: "#0A0D14",
+};
 
 export const metadata: Metadata = {
   title: "Claire AI - Autonomous AI Social Media Manager",
@@ -18,7 +22,6 @@ export const metadata: Metadata = {
     "Twitter X Refactoring",
   ],
   authors: [{ name: "Claire AI Team" }],
-  themeColor: "#0A0D14",
   openGraph: {
     title: "Claire AI - Autonomous AI Social Media Manager",
     description: "Multi-agent AI team for viral content creation, channel optimization, and strategic content calendars.",

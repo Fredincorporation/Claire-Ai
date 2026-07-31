@@ -54,6 +54,19 @@ Focus on:
             posts_block = "\n---\n".join([str(p) for p in past_posts])
             content_to_analyze = f"{content_to_analyze}\n\n--- PAST POSTS LIST ---\n{posts_block}"
 
+        # Safeguard against blowing LLM token limits on very long pasted text / multiple attachments
+        MAX_OPTIMIZER_CONTENT_CHARS = 10000
+        if len(content_to_analyze) > MAX_OPTIMIZER_CONTENT_CHARS:
+            orig_len = len(content_to_analyze)
+            head_content = content_to_analyze[:6000]
+            tail_content = content_to_analyze[-3000:]
+            content_to_analyze = (
+                f"{head_content}\n\n"
+                f"[... CONTENT TRUNCATED FOR TOKEN EFFICIENCY ({orig_len - 9000} CHARACTERS OMITTED FROM MIDDLE) ...]\n\n"
+                f"{tail_content}"
+            )
+            logger.info(f"OptimizerAgent truncated input content from {orig_len} to {len(content_to_analyze)} chars.")
+
         banned_words = brand_profile.get('do_not_use', [])
         banned_str = ', '.join(banned_words) if banned_words else 'None'
 
@@ -164,10 +177,13 @@ Perform a deep social content audit and return a valid JSON object matching EXAC
         markdown_str = "\n".join(md_lines)
 
         # Buffer / Hootsuite CSV Export
-        csv_lines = ["Date,Time,Platform,Post Content"]
-        for idx, (platform, text) in enumerate(posts.items(), 1):
-            clean_text = text.replace('"', '""').replace("\n", " ")
-            csv_lines.append(f"2025-05-0{idx},09:00 AM,{platform.capitalize()},\"{clean_text}\"")
+        from datetime import datetime, timedelta
+        start_date = datetime.now() + timedelta(days=1)
+        csv_lines = ["Date,Time,Text,Platform"]
+        for idx, (platform, text) in enumerate(posts.items()):
+            post_date = (start_date + timedelta(days=idx)).strftime("%Y-%m-%d")
+            clean_text = text.replace('"', '""')
+            csv_lines.append(f"\"{post_date}\",\"09:00 AM\",\"{clean_text}\",\"{platform.capitalize()}\"")
         buffer_csv = "\n".join(csv_lines)
 
         # Plain Text Export

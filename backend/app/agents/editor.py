@@ -49,8 +49,9 @@ If a draft violates brand rules, rewrite it. Do not pass through non-compliant c
         # Always resolve brand profile from Supabase (via memory manager) when possible
         brand_profile = ctx.get("brand_profile")
         brand_id = ctx.get("brand_id", "default")
+        user_id = ctx.get("user_id")
         if not brand_profile or brand_profile.get("id") != brand_id:
-            brand_profile = await memory_manager.get_brand_profile(brand_id)
+            brand_profile = await memory_manager.get_brand_profile(brand_id, user_id=user_id)
             ctx["brand_profile"] = brand_profile
 
         brand_block = format_brand_profile_for_prompt(brand_profile)

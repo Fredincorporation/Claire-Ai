@@ -45,11 +45,12 @@ to deliver top-tier social media strategies, platform-native content, and growth
         """
         ctx = context or {}
         brand_id = ctx.get("brand_id", "default")
+        user_id = ctx.get("user_id")
         mode = ctx.get("mode", "auto")
         target_platforms = ctx.get("platforms") or ["x", "linkedin", "instagram", "tiktok", "threads"]
 
         # Fetch brand voice context
-        brand_profile = await memory_manager.get_brand_profile(brand_id)
+        brand_profile = await memory_manager.get_brand_profile(brand_id, user_id=user_id)
         ctx["brand_profile"] = brand_profile
 
         # Determine workflow mode
@@ -89,12 +90,15 @@ to deliver top-tier social media strategies, platform-native content, and growth
             })
 
             # Build export formats for calendar
-            csv_lines = ["Day,Platform,Theme,Best Time,Post Content"]
+            from datetime import datetime, timedelta
+            start_date = datetime.now() + timedelta(days=1)
+            csv_lines = ["Date,Time,Text,Platform,Theme"]
             md_lines = ["# Content Calendar Plan\n"]
             txt_lines = ["CONTENT CALENDAR SCHEDULE\n"]
 
-            for item in calendar:
-                d_label = item.get("day_label", "Day")
+            for idx, item in enumerate(calendar):
+                post_date = (start_date + timedelta(days=idx)).strftime("%Y-%m-%d")
+                d_label = item.get("day_label", f"Day {idx+1}")
                 plat = item.get("platform", "x").upper()
                 thm = item.get("theme", "General")
                 tme = item.get("best_time", "09:00 AM")
@@ -102,8 +106,8 @@ to deliver top-tier social media strategies, platform-native content, and growth
 
                 md_lines.append(f"### {d_label} | {plat} ({tme}) - *{thm}*\n{cnt}\n")
                 txt_lines.append(f"[{d_label} - {plat} @ {tme}]\nTheme: {thm}\nContent: {cnt}\n")
-                clean_cnt = cnt.replace('"', '""').replace("\n", " ")
-                csv_lines.append(f"\"{d_label}\",\"{plat}\",\"{thm}\",\"{tme}\",\"{clean_cnt}\"")
+                clean_cnt = cnt.replace('"', '""')
+                csv_lines.append(f"\"{post_date}\",\"{tme}\",\"{clean_cnt}\",\"{plat}\",\"{thm}\"")
 
             exports = {
                 "markdown": "\n".join(md_lines),
@@ -244,14 +248,17 @@ to deliver top-tier social media strategies, platform-native content, and growth
 
         # Generate default export bundle if not built by specific mode
         if not exports and platform_posts:
+            from datetime import datetime, timedelta
+            start_date = datetime.now() + timedelta(days=1)
             md_lines = ["# Campaign Content Export\n"]
-            csv_lines = ["Date,Time,Platform,Post Content"]
+            csv_lines = ["Date,Time,Text,Platform"]
             txt_lines = ["CAMPAIGN CONTENT SUMMARY\n"]
-            for idx, (plat, content) in enumerate(platform_posts.items(), 1):
+            for idx, (plat, content) in enumerate(platform_posts.items()):
+                post_date = (start_date + timedelta(days=idx)).strftime("%Y-%m-%d")
                 md_lines.append(f"### {plat.upper()}\n{content}\n")
                 txt_lines.append(f"=== {plat.upper()} ===\n{content}\n")
-                clean_c = content.replace('"', '""').replace("\n", " ")
-                csv_lines.append(f"2025-05-0{idx},09:00 AM,{plat.capitalize()},\"{clean_c}\"")
+                clean_c = content.replace('"', '""')
+                csv_lines.append(f"\"{post_date}\",\"09:00 AM\",\"{clean_c}\",\"{plat.capitalize()}\"")
             exports = {
                 "markdown": "\n".join(md_lines),
                 "buffer_csv": "\n".join(csv_lines),
